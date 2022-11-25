@@ -21,6 +21,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     const productsCollection = client.db("motoland").collection("products");
+    const usersCollection = client.db("motoland").collection("users");
 
     app.get("/products", async (req, res) => {
       let query = {};
@@ -31,6 +32,12 @@ async function run() {
       }
       const products = await productsCollection.find(query).toArray();
       res.send(products);
+    });
+
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+      const result = await usersCollection.insertOne(user);
+      res.send(result);
     });
   } finally {
   }
