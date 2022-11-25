@@ -22,6 +22,7 @@ async function run() {
   try {
     const productsCollection = client.db("motoland").collection("products");
     const usersCollection = client.db("motoland").collection("users");
+    const bookedCollection = client.db("motoland").collection("booked");
 
     app.get("/products", async (req, res) => {
       let query = {};
@@ -43,6 +44,16 @@ async function run() {
     app.post("/users", async (req, res) => {
       const user = req.body;
       const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
+    app.post("/products", async (req, res) => {
+      const createdProduct = req.body;
+      const result = await productsCollection.insertOne(createdProduct);
+      res.send(result);
+    });
+    app.post("/booked", async (req, res) => {
+      const bookedProduct = req.body;
+      const result = await bookedCollection.insertOne(bookedProduct);
       res.send(result);
     });
   } finally {
