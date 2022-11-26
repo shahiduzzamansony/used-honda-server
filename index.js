@@ -34,6 +34,12 @@ async function run() {
       const products = await productsCollection.find(query).toArray();
       res.send(products);
     });
+    app.get("/booked", async (req, res) => {
+      const email = req.query.email;
+      const query = { email: email };
+      const orders = await bookedCollection.find(query).toArray();
+      res.send(orders);
+    });
 
     app.get("/users", async (req, res) => {
       const query = {};
@@ -43,8 +49,14 @@ async function run() {
 
     app.get("/products/:email", async (req, res) => {
       const email = req.params.email;
-      const query = { email };
+      const query = { email: email };
       const result = await productsCollection.find(query).toArray();
+      res.send(result);
+    });
+    app.get("/users/role/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { email: email };
+      const result = await usersCollection.findOne(query);
       res.send(result);
     });
 
@@ -60,6 +72,15 @@ async function run() {
     });
     app.post("/booked", async (req, res) => {
       const bookedProduct = req.body;
+      // console.log(bookedProduct);
+      const query = {
+        itemName: bookedProduct.itemName,
+      };
+      const alreadyBooked = await bookedCollection.find(query).toArray();
+      if (alreadyBooked.length) {
+        const message = `You have already booked ${bookedProduct.itemName}`;
+        return res.send({ acknowledged: false, message });
+      }
       const result = await bookedCollection.insertOne(bookedProduct);
       res.send(result);
     });
