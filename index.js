@@ -1,9 +1,9 @@
 const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-const port = process.env.PORT || 5000;
-
 require("dotenv").config();
+const port = process.env.PORT || 5000;
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 const app = express();
 
@@ -22,10 +22,28 @@ async function run() {
   try {
     const productsCollection = client.db("motoland").collection("products");
     const usersCollection = client.db("motoland").collection("users");
-    const bookedCollection = client.db("motoland").collection("booked");
+    const reportedCollection = client.db("motoland").collection("reported");
+    const paymentsCollection = client.db("motoland").collection("payments");
+    app.get("/products/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: ObjectId(id) };
+      const result = await productsCollection.findOne(query);
+      res.send(result);
+    });
+    app.get("/users", async (req, res) => {
+      let query = {};
+      if (req.query.role) {
+        query = {
+          role: req.query.role,
+        };
+      }
+      const result = await usersCollection.find(query).toArray();
+      res.send(result);
+    });
 
     app.get("/products", async (req, res) => {
       let query = {};
+
       if (req.query.type) {
         query = {
           type: req.query.type,
@@ -36,6 +54,11 @@ async function run() {
           email: req.query.email,
         };
       }
+      if (req.query.buyerEmail) {
+        query = {
+          buyerEmail: req.query.buyerEmail,
+        };
+      }
       if (req.query.isAdvertised) {
         query = {
           isAdvertised: req.query.isAdvertised,
@@ -43,12 +66,6 @@ async function run() {
       }
       const products = await productsCollection.find(query).toArray();
       res.send(products);
-    });
-    app.get("/booked", async (req, res) => {
-      const email = req.query.email;
-      const query = { email: email };
-      const orders = await bookedCollection.find(query).toArray();
-      res.send(orders);
     });
 
     app.get("/users", async (req, res) => {
@@ -64,9 +81,57 @@ async function run() {
       res.send(result);
     });
 
+    app.post("/create-payment-intent", async (req, res) => {
+      const order = req.body;
+      // console.log(order);
+      const price = order.resalePrice;
+      const amount = price / 100;
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: "usd",
+        payment_method_types: ["card"],
+      });
+      // console.log(paymentIntent);
+
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
+    });
+
+    app.post("/payments", async (req, res) => {
+      const data = req.body;
+      const result = await paymentsCollection.insertOne(data);
+      const id = data.bookingId;
+      const filter = { _id: ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          email: data.email,
+          paid: true,
+          transactionId: data.transactionId,
+          isAdvertised: "",
+          buyerEmail: data.buyerEmail,
+        },
+      };
+      const updatedResult = await productsCollection.updateOne(
+        filter,
+        updatedDoc
+      );
+      res.send(result);
+    });
+
     app.post("/users", async (req, res) => {
       const user = req.body;
       const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
+    app.get("/reported", async (req, res) => {
+      const query = {};
+      const result = await reportedCollection.find(query).toArray();
+      res.send(result);
+    });
+    app.post("/reported", async (req, res) => {
+      const reportedProduct = req.body;
+      const result = await reportedCollection.insertOne(reportedProduct);
       res.send(result);
     });
     app.post("/products", async (req, res) => {
@@ -90,24 +155,76 @@ async function run() {
       );
       res.send(result);
     });
-    app.post("/booked", async (req, res) => {
-      const bookedProduct = req.body;
-      // console.log(bookedProduct);
-      const query = {
-        itemName: bookedProduct.itemName,
+    app.put("/users/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: ObjectId(id) };
+      const options = { upsert: true };
+      const updateDoc = {
+        $set: {
+          isVerified: "Verified",
+        },
       };
-      const alreadyBooked = await bookedCollection.find(query).toArray();
-      if (alreadyBooked.length) {
-        const message = `You have already booked ${bookedProduct.itemName}`;
-        return res.send({ acknowledged: false, message });
-      }
-      const result = await bookedCollection.insertOne(bookedProduct);
+      const result = await usersCollection.updateOne(
+        filter,
+        updateDoc,
+        options
+      );
       res.send(result);
     });
+    app.put("/products/:id", async (req, res) => {
+      const id = req.params.id;
+      const buyerEmail = req.body.buyerEmail;
+      const meetingLocation = req.body.meetingLocation;
+      const buyerName = req.body.buyerName;
+      const email = req.body.email;
+      const phoneNumber = req.body.phoneNumber;
+      const query = { _id: ObjectId(id) };
+      const options = { upsert: true };
+      const addedDoc = {
+        $set: {
+          email: email,
+          meetingLocation: meetingLocation,
+          phoneNumber: phoneNumber,
+          buyerEmail: buyerEmail,
+          buyerName: buyerName,
+        },
+      };
+      const result = await productsCollection.updateOne(
+        query,
+        addedDoc,
+        options
+      );
+      res.send(result);
+    });
+    app.patch("/products/:id", async (req, res) => {
+      const id = req.params.id;
+      const email = req.body.email;
+      const meetingLocation = req.body.meetingLocation;
+      const buyerName = req.body.buyerName;
+      const phoneNumber = req.body.phoneNumber;
+      const query = { _id: ObjectId(id) };
+      const deletedDoc = {
+        $set: {
+          meetingLocation: meetingLocation,
+          phoneNumber: phoneNumber,
+          email: email,
+          buyerName: buyerName,
+        },
+      };
+      const result = await productsCollection.updateOne(query, deletedDoc);
+      res.send(result);
+    });
+
     app.delete("/products/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: ObjectId(id) };
       const result = await productsCollection.deleteOne(query);
+      res.send(result);
+    });
+    app.delete("/users/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: ObjectId(id) };
+      const result = await usersCollection.deleteOne(query);
       res.send(result);
     });
   } finally {
