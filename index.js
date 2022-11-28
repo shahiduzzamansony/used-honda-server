@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const jwt = require("jsonwebtoken");
 require("dotenv").config();
 const port = process.env.PORT || 5000;
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
@@ -18,19 +19,51 @@ const client = new MongoClient(uri, {
   serverApi: ServerApiVersion.v1,
 });
 
+function verifyJWT(req, res, next) {
+  console.log("token", req.headers.authorization);
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).send("Unauthorized access..");
+  }
+
+  const token = authHeader.split(" ")[1];
+  jwt.verify(token, process.env.ACCESS_TOKEN, function (err, decoded) {
+    if (err) {
+      res.status(403).send({ message: "Forbidden access..." });
+    }
+    req.decoded = decoded;
+    next();
+  });
+}
+
 async function run() {
   try {
     const productsCollection = client.db("motoland").collection("products");
     const usersCollection = client.db("motoland").collection("users");
     const reportedCollection = client.db("motoland").collection("reported");
     const paymentsCollection = client.db("motoland").collection("payments");
+
+    app.get("/jwt", async (req, res) => {
+      const email = req.query.email;
+      const query = { email: email };
+      const user = await usersCollection.findOne(query);
+      if (user) {
+        const token = jwt.sign({ email }, process.env.ACCESS_TOKEN, {
+          expiresIn: "1h",
+        });
+
+        return res.send({ accessToken: token });
+      }
+      res.status(403).send({ accessToken: "" });
+    });
+
     app.get("/products/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: ObjectId(id) };
       const result = await productsCollection.findOne(query);
       res.send(result);
     });
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyJWT, async (req, res) => {
       let query = {};
       if (req.query.role) {
         query = {
@@ -41,8 +74,12 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/products", async (req, res) => {
+    app.get("/products", verifyJWT, async (req, res) => {
       let query = {};
+      const decodedEmail = req.decoded.email;
+      if (req.query.email !== decodedEmail) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
 
       if (req.query.type) {
         query = {
@@ -151,6 +188,22 @@ async function run() {
       const result = await productsCollection.updateOne(
         filter,
         updateDoc,
+        options
+      );
+      res.send(result);
+    });
+    app.put("/products/verify/:email", async (req, res) => {
+      const email = req.params.email;
+      const filter = { email: email };
+      const options = { upsert: true };
+      const updatedDoc = {
+        $set: {
+          isVerified: "Verified",
+        },
+      };
+      const result = await productsCollection.updateOne(
+        filter,
+        updatedDoc,
         options
       );
       res.send(result);
