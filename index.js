@@ -42,6 +42,7 @@ async function run() {
     const usersCollection = client.db("motoland").collection("users");
     const reportedCollection = client.db("motoland").collection("reported");
     const paymentsCollection = client.db("motoland").collection("payments");
+    const categoriesCollection = client.db("motoland").collection("categories");
 
     app.get("/jwt", async (req, res) => {
       const email = req.query.email;
@@ -55,6 +56,12 @@ async function run() {
         return res.send({ accessToken: token });
       }
       res.status(403).send({ accessToken: "" });
+    });
+
+    app.get("/categories", async (req, res) => {
+      const query = {};
+      const result = await categoriesCollection.find(query).toArray();
+      res.send(result);
     });
 
     app.get("/products/:id", async (req, res) => {
@@ -74,12 +81,8 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/products", verifyJWT, async (req, res) => {
+    app.get("/products", async (req, res) => {
       let query = {};
-      const decodedEmail = req.decoded.email;
-      if (req.query.email !== decodedEmail) {
-        return res.status(403).send({ message: "Forbidden access" });
-      }
 
       if (req.query.type) {
         query = {
